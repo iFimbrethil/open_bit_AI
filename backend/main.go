@@ -1,62 +1,57 @@
 package main
-// #cgo CFLAGS: -I/usr/include/python3.8
-// #cgo LDFLAGS: -lpython3.8
+// #cgo CFLAGS: -I/usr/include/python3.10
+// #cgo LDFLAGS: -lpython3.10
 // #include <Python.h>
+
+import "C"
 
 import (
 	"fmt"
-	"net/http"
-    "C"
-	"github.com/rs/cors"
+    "unsafe"
 )
 
-func initialize() {
-    // Initialize Python
+func main(){
+    // to initialize interpreter 
     C.Py_Initialize()
 
-    // Import the Python module
-    module := C.PyImport_ImportModule("my_python_module")
-
-    // Check for errors when importing
-    if module == nil {
-        C.PyErr_Print()
+    //define module name in c bindings
+    moduleName := C.CString("test_wrap")
+    //handle memory when function call closes
+    defer C.free(unsafe.Pointer(moduleName))
+    //import module
+    module := C.PyImport_ImportModule(moduleName)
+    //error handle
+    if module == nil{
+        handleError()
         return
     }
 
-    // Get a reference to the Python function
-    function := C.PyObject_GetAttrString(module, "my_python_function")
-
-    // Check for errors when getting the function
-    if function == nil {
-        C.PyErr_Print()
+    //define function name in C bindings
+    functionName := C.CString("add")
+    defer C.free(unsafe.Pointer(functionName))
+    //import function
+    addFunc := C.PyObject_GetAttrString(module, functionName)
+    if addFunc == nil{
+        handleError()
         return
     }
+    //create arguments in C bindings
+    arg1 := C.PyLong_FromLong(3)
+    arg2 := C.PyLong_FromLong(5)
+    defer C.Py_DecRef(arg1)
+    defer C.Py_DecRef(arg2)
+    args := C.PyTuple_Pack(2, arg1, arg2)
+    defer C.Py_DecRef(args)
 
-    // Prepare and call the Python function
-    args := C.Py_BuildValue("(s)", "Hello, Python!")
-    result := C.PyObject_CallObject(function, args)
+    //create an object to store the result and call the function
+    result := C.PyObject_CallObject(addFunc, args)
+    defer C.Py_DecRef(result)
+    sum := int(C.PyLong_AsLong(result))
+    fmt.Printf("Result: %d\n", sum)
 
-    // Check for errors when calling the function
-    if result == nil {
-        C.PyErr_Print()
-        return
-    }
-
-    // Handle the result (convert it to Go data if necessary)
-
-    // Finalize Python
+    
+    //close interpreter
     C.Py_Finalize()
-    fmt.Println("initialized")
+
 }
 
-func main() {
-    initialize
-    mux := http.NewServeMux()
-    mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        fmt.Fprintf(w, "Hello from Go!")
-    })
-
-    handler := cors.Default().Handler(mux)
-
-    http.ListenAndServe(":8080", handler)
-}
