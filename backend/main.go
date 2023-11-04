@@ -1,57 +1,62 @@
 package main
-// #cgo CFLAGS: -I/usr/include/python3.10
-// #cgo LDFLAGS: -L/usr/lib/x86_64-linux-gnu -lpython3.10
-// #include <Python.h>
-
-import "C"
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-    "unsafe"
+	"net/http"
+	"os"
+
+	"github.com/joho/godotenv"
 )
 
-func main(){
-    // to initialize interpreter 
-    C.Py_Initialize()
+func main() {
+	// Load environment variables from .env file
+	if err := godotenv.Load(); err != nil {
+		fmt.Println("Error loading .env file")
+		return
+	}
 
-    //define module name in c bindings
-    moduleName := C.CString("test_wrap")
-    //handle memory when function call closes
-    defer C.free(unsafe.Pointer(moduleName))
-    //import module
-    module := C.PyImport_ImportModule(moduleName)
-    //error handle
-    if module == nil{
-        handleError()
-        return
-    }
+	// Access the BITAPAI_API_KEY from the environment variables
+	bitapaiKey := os.Getenv("BITAPAI_API_KEY")
 
-    //define function name in C bindings
-    functionName := C.CString("add")
-    defer C.free(unsafe.Pointer(functionName))
-    //import function
-    addFunc := C.PyObject_GetAttrString(module, functionName)
-    if addFunc == nil{
-        handleError()
-        return
-    }
-    //create arguments in C bindings
-    arg1 := C.PyLong_FromLong(3)
-    arg2 := C.PyLong_FromLong(5)
-    defer C.Py_DecRef(arg1)
-    defer C.Py_DecRef(arg2)
-    args := C.PyTuple_Pack(2, arg1, arg2)
-    defer C.Py_DecRef(args)
+	fmt.Println(bitapaiKey)
 
-    //create an object to store the result and call the function
-    result := C.PyObject_CallObject(addFunc, args)
-    defer C.Py_DecRef(result)
-    sum := int(C.PyLong_AsLong(result))
-    fmt.Printf("Result: %d\n", sum)
+	payload := []byte(`{
+		"messages": [
+			{
+				"role": "user",
+				"content": "What is the meaning of life?"
+			}
+		],
+		"pool_id": 4,
+		"count": 5,
+		"return_all": true
+	}`)
 
-    
-    //close interpreter
-    C.Py_Finalize()
+	conn, err := http.NewRequest("POST", "https://api.bitapai.io/text", bytes.NewBuffer(payload))
+	if err != nil {
+		fmt.Println("Error creating HTTP request:", err)
+		return
+	}
 
+	conn.Header.Add("Content-Type", "application/json")
+	conn.Header.Add("X-API-KEY", bitapaiKey)
+
+	client := &http.Client{}
+	res, err := client.Do(conn)
+	if err != nil {
+		fmt.Println("Error making HTTP request:", err)
+		return
+	}
+	defer res.Body.Close()
+
+	var result map[string]interface{}
+	decoder := json.NewDecoder(res.Body)
+	if err := decoder.Decode(&result); err != nil {
+		fmt.Println("Error decoding response:", err)
+		return
+	}
+
+	fmt.Println(result)
 }
-
