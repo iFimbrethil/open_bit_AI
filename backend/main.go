@@ -17,24 +17,60 @@ func main() {
 		return
 	}
 
+	// Define the handler function
+	http.HandleFunc("/api/query", handleQuery)
+
+	// Start the HTTP server
+	fmt.Println("Starting server at port 8080...")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		fmt.Println("Error starting server:", err)
+	}
+}
+
+// Define a struct for your expected request format
+type QueryRequest struct {
+	Content string `json:"content"`
+}
+
+func handleQuery(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*") // In production, replace '*' with your frontend's actual URL
+
+	if r.Method != "POST" {
+		http.Error(w, "Only POST method is accepted", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Decode the JSON request body
+	var queryReq QueryRequest
+	err := json.NewDecoder(r.Body).Decode(&queryReq)
+	if err != nil {
+		http.Error(w, "Error parsing request body", http.StatusBadRequest)
+		return
+	}
+
 	// Access the BITAPAI_API_KEY from the environment variables
 	bitapaiKey := os.Getenv("BITAPAI_API_KEY")
 
-	fmt.Println(bitapaiKey)
-
-	payload := []byte(`{
-		"messages": [
+	// Dynamically create the payload using the content from the request
+	payload := map[string]interface{}{
+		"messages": []map[string]string{
 			{
-				"role": "user",
-				"content": "What is the meaning of life?"
-			}
-		],
-		"pool_id": 4,
-		"count": 5,
-		"return_all": true
-	}`)
+				"role":    "user",
+				"content": queryReq.Content,
+			},
+		},
+		"pool_id":     4,
+		"count":       5,
+		"return_all":  true,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Println("Error marshalling payload:", err)
+		return
+	}
 
-	conn, err := http.NewRequest("POST", "https://api.bitapai.io/text", bytes.NewBuffer(payload))
+	conn, err := http.NewRequest("POST", "https://api.bitapai.io/text", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		fmt.Println("Error creating HTTP request:", err)
 		return
@@ -58,5 +94,12 @@ func main() {
 		return
 	}
 
-	fmt.Println(result)
+	// Set the Content-Type header to application/json
+	w.Header().Set("Content-Type", "application/json")
+
+	// Encode and write the JSON response
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		fmt.Println("Error encoding JSON response:", err)
+		http.Error(w, "Error encoding JSON response", http.StatusInternalServerError)
+	}
 }
